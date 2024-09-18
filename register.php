@@ -26,7 +26,7 @@ if (!$data ||
     exit;
 }
 
-$username = $data->username;
+$username = $data->username; // Username from user input
 $contactNo = $data->contactNo;
 $password = password_hash($data->password, PASSWORD_DEFAULT);
 $parentNumber = $data->parentNumber;
@@ -37,7 +37,7 @@ $course = $data->course;
 $dateOfExam = $data->dateOfExam;
 
 // Check if the user already exists (based on username or contact number)
-$sql_check = "SELECT COUNT(*) FROM users WHERE username = ? OR contact_no = ?";
+$sql_check = "SELECT COUNT(*) FROM users WHERE username = ? OR contact_number = ?";
 $stmt_check = $pdo->prepare($sql_check);
 $stmt_check->execute([$username, $contactNo]);
 $user_exists = $stmt_check->fetchColumn();
@@ -51,12 +51,13 @@ if ($user_exists > 0) {
 $user_id = uniqid("EDU");
 
 // Prepare SQL query to insert the new user
-$sql = "INSERT INTO users (id, username, password, parent_number, contact_no, address, class, school_name, course, date_of_exam, role) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'student')";
+// We store the generated user_id in the username field and the user-provided username in the name field
+$sql = "INSERT INTO users (uid, username, name, password, parents_number, contact_number, address, class, school, course, date_of_exam, role) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'student')";
 $stmt = $pdo->prepare($sql);
 
 try {
-    if ($stmt->execute([$user_id, $username, $password, $parentNumber, $contactNo, $address, $userClass, $schoolName, $course, $dateOfExam])) {
+    if ($stmt->execute([$user_id, $user_id, $username, $password, $parentNumber, $contactNo, $address, $userClass, $schoolName, $course, $dateOfExam])) {
         echo json_encode(["message" => "User registered successfully", "user_id" => $user_id, "username" => $username]);
     } else {
         echo json_encode(["message" => "Failed to register user"]);
