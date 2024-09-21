@@ -16,7 +16,14 @@ $stmt->execute([$username]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if ($user && password_verify($password, $user['password'])) {
-    echo json_encode(["message" => "Login successful", "user" => $user]);
+    // Return the role along with the success message
+    echo json_encode([
+        "message" => "Login successful",
+        "user" => [
+            "username" => $user['username'],
+            "role" => $user['role']  // Assuming you have a 'role' column in your database
+        ]
+    ]);
 } else {
     echo json_encode(["message" => "Invalid username or password"]);
 }
