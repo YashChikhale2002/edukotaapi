@@ -48,7 +48,7 @@ if ($user_exists > 0) {
 }
 
 // Generate a unique user ID starting with "EDU"
-$user_id = uniqid("EDU");
+$user_id = "EK" . substr(uniqid(), -4);
 
 // Prepare SQL query to insert the new user
 // We store the generated user_id in the username field and the user-provided username in the name field
