@@ -20,7 +20,7 @@ if ($user && password_verify($password, $user['password'])) {
     echo json_encode([
         "message" => "Login successful",
         "user" => [
-            "username" => $user['username'],
+            "userid" => $user['username'],
             "role" => $user['role']  // Assuming you have a 'role' column in your database
         ]
     ]);
