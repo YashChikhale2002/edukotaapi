@@ -1,77 +1,79 @@
 <?php
-header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST');
-header('Access-Control-Allow-Headers: Content-Type');
+// Enable error reporting for debugging
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
-// Include the configuration file
-include_once '../config.php';
+include_once '../config.php'; // Include your database configuration
+header("Content-Type: application/json");
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: POST");
+header("Access-Control-Allow-Headers: Content-Type");
 
-// Get the raw POST data
-$input = file_get_contents('php://input');
-$data = json_decode($input, true);
+// Handle POST request
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Get raw POST data
+    $input = json_decode(file_get_contents("php://input"), true);
+    error_log(print_r($input, true)); // Log the input for debugging
 
-// Validate input
-if (!isset($data['exam_id']) || !isset($data['user_id']) || !isset($data['answers']) || !is_array($data['answers'])) {
-    echo json_encode(['error' => 'Invalid input']);
-    exit;
-}
+    // Validate input
+    if (isset($input['eid'], $input['uid'], $input['answers'])) {
+        $exam_id = $input['eid'];
+        $user_id = $input['uid'];
+        $answers = $input['answers'];
 
-$exam_id = intval($data['exam_id']);
-$user_id = intval($data['user_id']);
-$answers = $data['answers'];
+        // Prepare to insert user answers
+        try {
+            $pdo->beginTransaction();
 
-try {
-    // Start a transaction
-    $pdo->beginTransaction();
+            // Loop through each answer and insert it into user_answers
+            foreach ($answers as $answer) {
+                $stmt = $pdo->prepare("
+                    INSERT INTO user_answers (uid, eid, qid, selected_option, marked_for_review, submission_time) 
+                    VALUES (:uid, :eid, :qid, :selected_option, :marked_for_review, NOW())
+                ");
+                $stmt->execute([
+                    ':uid' => $user_id,
+                    ':eid' => $exam_id,
+                    ':qid' => $answer['question_id'],
+                    ':selected_option' => $answer['selected_option'],
+                    ':marked_for_review' => $answer['marked_for_review'] ? 1 : 0,
+                ]);
+            }
 
-    // Iterate over the answers and insert each one into the database
-    foreach ($answers as $answer) {
-        $question_id = intval($answer['question_id']);
-        $selected_option = intval($answer['selected_option']);
-        $marked_for_review = $answer['marked_for_review'] ? 1 : 0;
+            // Calculate scores (implement your logic here)
+            $total_questions = count($answers);
+            $total_answered = count(array_filter($answers, fn($ans) => $ans['selected_option'] !== null));
+            $total_correct = 0; // Placeholder, implement your scoring logic
+            $total_marked_for_review = count(array_filter($answers, fn($ans) => $ans['marked_for_review']));
 
-        // Fetch the correct option and mark for the question
-        $stmt = $pdo->prepare("SELECT ans, mark FROM question WHERE qid = :question_id AND eid = :exam_id");
-        $stmt->execute(['question_id' => $question_id, 'exam_id' => $exam_id]);
-        $question = $stmt->fetch(PDO::FETCH_ASSOC);
+            // Insert into user_reports
+            $stmt = $pdo->prepare("
+                INSERT INTO user_reports (uid, eid, total_questions, total_answered, total_correct, total_marked_for_review, score, report_generated_time) 
+                VALUES (:uid, :eid, :total_questions, :total_answered, :total_correct, :total_marked_for_review, :score, NOW())
+            ");
+            $score = ($total_questions > 0) ? ($total_correct / $total_questions) * 100 : 0; // Calculate score
+            $stmt->execute([
+                ':uid' => $user_id,
+                ':eid' => $exam_id,
+                ':total_questions' => $total_questions,
+                ':total_answered' => $total_answered,
+                ':total_correct' => $total_correct,
+                ':total_marked_for_review' => $total_marked_for_review,
+                ':score' => $score,
+            ]);
 
-        if (!$question) {
-            throw new Exception("Question not found for qid: $question_id");
+            $pdo->commit();
+            echo json_encode(["success" => true]);
+
+        } catch (PDOException $e) {
+            $pdo->rollBack();
+            echo json_encode(["success" => false, "error" => $e->getMessage()]);
         }
-
-        $correct_option = intval($question['ans']);
-        $total_marks = floatval($question['mark']);
-        $is_correct = $selected_option === $correct_option ? 1 : 0;
-        $marks_awarded = $is_correct ? $total_marks : 0;
-
-        // Insert the answer into the user_exam_submissions table
-        $stmt = $pdo->prepare("
-            INSERT INTO user_exam_submissions 
-            (username, eid, qid, oid, correct_oid, statusold, marks_obtained, status, is_correct, marks_awarded, created_at) 
-            VALUES 
-            (:username, :exam_id, :question_id, :selected_option, :correct_option, 'old_status', :marks_obtained, :status, :is_correct, :marks_awarded, NOW())
-        ");
-        $stmt->execute([
-            'username' => $user_id, // Assuming user_id is used as the username
-            'exam_id' => $exam_id,
-            'question_id' => $question_id,
-            'selected_option' => $selected_option,
-            'correct_option' => $correct_option,
-            'marks_obtained' => $total_marks,
-            'status' => $marked_for_review ? 'Marked for Review' : 'Answered',
-            'is_correct' => $is_correct,
-            'marks_awarded' => $marks_awarded
-        ]);
+    } else {
+        echo json_encode(["success" => false, "error" => "Missing required fields"]);
     }
-
-    // Commit the transaction
-    $pdo->commit();
-
-    echo json_encode(['success' => true, 'message' => 'Answers submitted successfully']);
-} catch (Exception $e) {
-    // Rollback the transaction if any error occurs
-    $pdo->rollBack();
-    echo json_encode(['error' => 'Failed to submit answers: ' . $e->getMessage()]);
+} else {
+    echo json_encode(["success" => false, "message" => "Invalid request method"]);
 }
 ?>
