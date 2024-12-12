@@ -1,6 +1,6 @@
 <?php
 $host = 'localhost';
-$db = 'edukotaexam';
+$db = 'cat_exam';
 $user = 'root';
 $pass = '';
 

@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user_id = $input['uid'];
         $answers = $input['answers'];
 
-        // Prepare to insert user answers
+        // Prepare to insert user answers and update the user
         try {
             $pdo->beginTransaction();
 
@@ -61,6 +61,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':total_correct' => $total_correct,
                 ':total_marked_for_review' => $total_marked_for_review,
                 ':score' => $score,
+            ]);
+
+            // Update the users table with the current date only and set estatus to 1
+            $stmt = $pdo->prepare("
+                UPDATE users SET estatus = 1, examdate = CURDATE() WHERE uid = :uid
+            ");
+            $stmt->execute([
+                ':uid' => $user_id
             ]);
 
             $pdo->commit();

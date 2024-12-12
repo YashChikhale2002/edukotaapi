@@ -3,20 +3,19 @@ header('Content-Type: application/json');
 include_once '../config.php';
 header("Content-Type: application/json");
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST");
+header("Access-Control-Allow-Methods: PUT");
 header("Access-Control-Allow-Headers: Content-Type");
 
 $qid = $_GET['qid'];
 $data = json_decode(file_get_contents("php://input"), true);
 
-if (!isset($data['question'], $data['group'], $data['marks'], $data['toption'], $data['options'])) {
+if (!isset($data['question'], $data['mark'], $data['toption'], $data['options'])) {
     echo json_encode(['message' => 'Error: Missing required fields']);
     exit;
 }
 
 $question = $data['question'];
-$group = $data['group'];
-$marks = $data['marks'];
+$mark = $data['mark'];
 $toption = $data['toption'];
 $options = $data['options'];
 
@@ -24,11 +23,10 @@ try {
     $pdo->beginTransaction();
 
     // Update question
-    $stmt = $pdo->prepare("UPDATE question SET question = :question, gid = :group, mark = :marks, toption = :toption WHERE qid = :qid");
+    $stmt = $pdo->prepare("UPDATE question SET question = :question, mark = :mark, toption = :toption WHERE qid = :qid");
     $stmt->execute([
         'question' => $question,
-        'group' => $group,
-        'marks' => $marks,
+        'mark' => $mark,
         'toption' => $toption,
         'qid' => $qid
     ]);
