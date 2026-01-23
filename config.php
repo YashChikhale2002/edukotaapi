@@ -1,6 +1,11 @@
 <?php
+// $host = 'localhost';
+// $db = 'cat_exam';
+// $user = 'root';
+// $pass = '';
+
 $host = 'localhost';
-$db = 'cat_exam';
+$db = 'techinbo_rcat';
 $user = 'root';
 $pass = '';
 
@@ -9,6 +14,8 @@ $pass = '';
 // $db = 'u267553827_edukotaexam';
 // $user = 'u267553827_edukotaexam';
 // $pass = 'Abhi@9860';
+
+
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$db", $user, $pass);
