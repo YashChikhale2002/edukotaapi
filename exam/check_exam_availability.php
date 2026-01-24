@@ -1,80 +1,182 @@
 <?php
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
+header("Access-Control-Allow-Methods: GET");
+header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
 
-// ✅ Direct database connection (no config file needed)
-$host = "localhost";
-$db = "techinbo_rcat";  // Your database name
-$user = "root";
-$pass = "";  // Your MySQL password
+require_once '../config.php';
+
+if (!isset($pdo)) {
+    http_response_code(500);
+    echo json_encode([
+        'available' => false, 
+        'message' => 'Database connection failed'
+    ]);
+    exit;
+}
+
+$eid = isset($_GET['eid']) ? intval($_GET['eid']) : 0;
+
+if ($eid <= 0) {
+    echo json_encode([
+        'available' => false, 
+        'message' => 'Invalid exam ID'
+    ]);
+    exit;
+}
 
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$db", $user, $pass);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     
-    $eid = isset($_GET['eid']) ? $_GET['eid'] : die(json_encode(['success' => false, 'message' => 'No exam ID provided']));
-
-    $query = "SELECT eid, name, estatus, schedule_enabled, start_time, end_time, date
-              FROM onlineexam
-              WHERE eid = :eid
+    // ✅ Query onlineexam table
+    $query = "SELECT eid, name, class, estatus, duration, tmarks, date, start_time, end_time, schedule_enabled 
+              FROM onlineexam 
+              WHERE eid = :eid 
               LIMIT 1";
-
+    
     $stmt = $pdo->prepare($query);
-    $stmt->bindParam(":eid", $eid);
-    $stmt->execute();
-
-    if ($stmt->rowCount() > 0) {
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    $stmt->execute(['eid' => $eid]);
+    $exam = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$exam) {
+        echo json_encode([
+            'available' => false, 
+            'message' => 'Exam not found'
+        ]);
+        exit;
+    }
+    
+    // ✅ Get current date and time in IST (Asia/Kolkata)
+    date_default_timezone_set('Asia/Kolkata');
+    $currentDateTime = new DateTime();
+    $currentDate = $currentDateTime->format('Y-m-d');
+    $currentTime = $currentDateTime->format('H:i:s');
+    
+    $examDate = $exam['date'];
+    
+    error_log("🕐 Exam {$eid}: Current={$currentDate} {$currentTime}, ExamDate={$examDate}, schedule_enabled={$exam['schedule_enabled']}, estatus={$exam['estatus']}");
+    
+    // ✅ PRIORITY 1: Check if schedule_enabled = 1 (TIME SLOT CONTROLS AVAILABILITY)
+    if ($exam['schedule_enabled'] == 1) {
+        error_log("✅ Schedule-based exam (schedule_enabled=1)");
         
-        $is_available = false;
-        $message = "";
-        
-        // Check if scheduling is enabled
-        if ($row['schedule_enabled'] == 1 && !empty($row['start_time']) && !empty($row['end_time'])) {
-            $current_time = date('H:i:s');
-            $current_date = date('Y-m-d');
-            $exam_date = $row['date'];
-            
-            // Check if exam is on today's date
-            if ($current_date == $exam_date) {
-                // Check if current time is within the scheduled slot
-                if ($current_time >= $row['start_time'] && $current_time <= $row['end_time']) {
-                    $is_available = true;
-                    $message = "Exam is currently available";
-                } else if ($current_time < $row['start_time']) {
-                    $is_available = false;
-                    $message = "Exam will start at " . date('g:i A', strtotime($row['start_time']));
-                } else {
-                    $is_available = false;
-                    $message = "Exam has ended";
-                }
-            } else if ($current_date < $exam_date) {
-                $is_available = false;
-                $message = "Exam is scheduled for " . date('d-M-Y', strtotime($exam_date));
+        // Check date first
+        if ($examDate !== $currentDate) {
+            if ($currentDate < $examDate) {
+                echo json_encode([
+                    'available' => false,
+                    'message' => 'This exam is scheduled for ' . date('d-M-Y', strtotime($examDate)),
+                    'reason' => 'future_date',
+                    'exam_date' => $examDate
+                ]);
             } else {
-                $is_available = false;
-                $message = "Exam has ended";
+                echo json_encode([
+                    'available' => false,
+                    'message' => 'This exam has already ended',
+                    'reason' => 'past_date'
+                ]);
             }
-        } else {
-            // No scheduling, use estatus
-            $is_available = ($row['estatus'] == '1');
-            $message = $is_available ? "Exam is available" : "Exam is not published";
+            exit;
         }
         
-        echo json_encode(array(
-            "success" => true,
-            "is_available" => $is_available,
-            "message" => $message,
-            "exam" => $row
-        ));
-    } else {
-        echo json_encode(array(
-            "success" => false,
-            "message" => "Exam not found"
-        ));
+        // ✅ TIME SLOT VALIDATION
+        if (!empty($exam['start_time']) && !empty($exam['end_time'])) {
+            $startTime = $exam['start_time'];
+            $endTime = $exam['end_time'];
+            
+            // Convert to HH:MM format
+            $currentTimeFormatted = substr($currentTime, 0, 5);
+            $startTimeFormatted = substr($startTime, 0, 5);
+            $endTimeFormatted = substr($endTime, 0, 5);
+            
+            error_log("⏰ Time check: Current={$currentTimeFormatted}, Start={$startTimeFormatted}, End={$endTimeFormatted}");
+            
+            // ✅ Check if BEFORE start time
+            if ($currentTimeFormatted < $startTimeFormatted) {
+                echo json_encode([
+                    'available' => false,
+                    'message' => "This exam will be available from {$startTimeFormatted}",
+                    'reason' => 'before_start_time',
+                    'start_time' => $startTimeFormatted,
+                    'current_time' => $currentTimeFormatted
+                ]);
+                exit;
+            }
+            
+            // ✅ Check if AFTER end time
+            if ($currentTimeFormatted > $endTimeFormatted) {
+                echo json_encode([
+                    'available' => false,
+                    'message' => "This exam ended at {$endTimeFormatted}",
+                    'reason' => 'after_end_time',
+                    'end_time' => $endTimeFormatted,
+                    'current_time' => $currentTimeFormatted
+                ]);
+                exit;
+            }
+            
+            // ✅ WITHIN TIME SLOT - AVAILABLE!
+            error_log("✅ Exam {$eid} is AVAILABLE! Within time slot.");
+            
+            echo json_encode([
+                'available' => true,
+                'message' => 'Exam is available now',
+                'exam' => $exam,
+                'current_time' => $currentTimeFormatted,
+                'time_slot' => "{$startTimeFormatted} - {$endTimeFormatted}"
+            ]);
+            exit;
+        }
     }
+    
+    // ✅ PRIORITY 2: If schedule_enabled = 0, use estatus flag
+    error_log("📋 Manual publishing mode (schedule_enabled=0 or no time slot)");
+    
+    // Check if exam is published manually
+    if ($exam['estatus'] != '1') {
+        echo json_encode([
+            'available' => false, 
+            'message' => 'This exam is not published yet',
+            'reason' => 'not_published'
+        ]);
+        exit;
+    }
+    
+    // Check date
+    if ($examDate !== $currentDate) {
+        if ($currentDate < $examDate) {
+            echo json_encode([
+                'available' => false,
+                'message' => 'This exam is scheduled for ' . date('d-M-Y', strtotime($examDate)),
+                'reason' => 'future_date'
+            ]);
+        } else {
+            echo json_encode([
+                'available' => false,
+                'message' => 'This exam has already ended',
+                'reason' => 'past_date'
+            ]);
+        }
+        exit;
+    }
+    
+    // ✅ Manual mode - Available if published and date matches
+    error_log("✅ Exam {$eid} is AVAILABLE! (Manual publishing mode)");
+    
+    echo json_encode([
+        'available' => true,
+        'message' => 'Exam is available',
+        'exam' => $exam
+    ]);
+    
 } catch (PDOException $e) {
+    error_log("❌ Database error: " . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['error' => 'Database error: ' . $e->getMessage()]);
+    echo json_encode([
+        'available' => false,
+        'message' => 'Server error occurred'
+    ]);
 }
+
+$pdo = null;
 ?>

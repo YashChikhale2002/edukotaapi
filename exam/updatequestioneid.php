@@ -14,9 +14,9 @@ if (!$pdo) {
 // ✅ GET POST DATA
 $data = json_decode(file_get_contents("php://input"));
 
-// ✅ EXTRACT FIELDS
-$questionId = isset($data->questionId) ? $data->questionId : null;
-$examId = isset($data->examId) ? $data->examId : null;
+// ✅ EXTRACT FIELDS (support both old and new field names)
+$questionId = isset($data->questionId) ? $data->questionId : (isset($data->qid) ? $data->qid : null);
+$examId = isset($data->examId) ? $data->examId : (isset($data->eid) ? $data->eid : null);
 
 // Validate required field
 if (!$questionId) {
@@ -44,17 +44,18 @@ try {
     
     if ($stmt->execute()) {
         echo json_encode([
-            'status' => 'success', 
+            'status' => 'success',
+            'success' => true, // ✅ Added for compatibility
             'message' => 'Question updated successfully',
             'qid' => $questionId,
             'eid' => $examId
         ]);
     } else {
-        echo json_encode(['status' => 'error', 'message' => 'Failed to update question']);
+        echo json_encode(['status' => 'error', 'success' => false, 'message' => 'Failed to update question']);
     }
 
 } catch (PDOException $e) {
-    echo json_encode(['status' => 'error', 'message' => 'Database error: ' . $e->getMessage()]);
+    echo json_encode(['status' => 'error', 'success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
 }
 
 $pdo = null;

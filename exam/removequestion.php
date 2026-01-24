@@ -14,8 +14,8 @@ if (!$pdo) {
 // ✅ GET POST DATA
 $data = json_decode(file_get_contents("php://input"));
 
-// ✅ EXTRACT FIELD
-$questionId = isset($data->questionId) ? $data->questionId : null;
+// ✅ EXTRACT FIELD (support both old and new field names)
+$questionId = isset($data->questionId) ? $data->questionId : (isset($data->qid) ? $data->qid : null);
 
 // Validate required field
 if (!$questionId) {
@@ -31,16 +31,17 @@ try {
     
     if ($stmt->execute()) {
         echo json_encode([
-            'status' => 'success', 
+            'status' => 'success',
+            'success' => true, // ✅ Added for compatibility
             'message' => 'Question removed successfully',
             'qid' => $questionId
         ]);
     } else {
-        echo json_encode(['status' => 'error', 'message' => 'Failed to remove question']);
+        echo json_encode(['status' => 'error', 'success' => false, 'message' => 'Failed to remove question']);
     }
 
 } catch (PDOException $e) {
-    echo json_encode(['status' => 'error', 'message' => 'Database error: ' . $e->getMessage()]);
+    echo json_encode(['status' => 'error', 'success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
 }
 
 $pdo = null;
